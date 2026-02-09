@@ -3,115 +3,230 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Latest Teams R1 Installer</title>
+  <title>Teams Installer Links (All Rings)</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; line-height: 1.4; }
-    code { background: #f4f4f4; padding: 2px 6px; border-radius: 6px; }
-    .box { padding: 16px; border: 1px solid #ddd; border-radius: 12px; max-width: 900px; }
-    .muted { color: #666; }
+    :root { --b:#e6e6e6; --bg:#fff; --muted:#666; --pill:#f4f4f4; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 22px; line-height: 1.35; background: #fafafa; }
+    h1 { margin: 0 0 8px; }
+    .top { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin: 10px 0 18px; }
+    select, button { padding: 8px 10px; border-radius: 10px; border: 1px solid var(--b); background: var(--bg); }
+    button { cursor: pointer; }
+    .muted { color: var(--muted); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+    .card { background: var(--bg); border: 1px solid var(--b); border-radius: 14px; padding: 14px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    .title { display:flex; justify-content:space-between; gap: 10px; align-items: baseline; margin-bottom: 10px; }
+    .title b { font-size: 16px; }
+    .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--pill); border: 1px solid var(--b); white-space: nowrap; }
+    .row { margin: 6px 0; }
+    .row code { background: var(--pill); padding: 2px 6px; border-radius: 8px; border: 1px solid var(--b); }
     a { word-break: break-all; }
-    button { padding: 8px 12px; border-radius: 10px; border: 1px solid #ccc; background: white; cursor: pointer; }
+    .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top: 10px; }
+    .error { background:#fff3f3; border:1px solid #ffd1d1; padding: 10px; border-radius: 12px; }
+    .footer { margin-top: 18px; font-size: 12px; color: var(--muted); }
   </style>
 </head>
 <body>
-  <h1>Latest Teams “R1” installer link</h1>
-  <div class="box">
-    <p class="muted">
-      This page queries the Teams config service and prints the newest install link for the selected ring.
-    </p>
+  <h1>Microsoft Teams installers (All rings)</h1>
+  <div class="top">
+    <label>
+      Default view:
+      <select id="filter">
+        <option value="regular" selected>Regular (FOR USERS)</option>
+        <option value="all">All rings</option>
+      </select>
+    </label>
 
-    <p><b>Status:</b> <span id="status">Loading…</span></p>
-    <p><b>Ring:</b> <code id="ring">—</code></p>
-    <p><b>Arch:</b> <code id="arch">—</code></p>
-    <p><b>Version:</b> <code id="version">—</code></p>
-    <p><b>Installer URL:</b> <span id="url">—</span></p>
+    <button id="refresh">Refresh</button>
+    <span class="muted" id="status">Loading…</span>
+  </div>
 
-    <p>
-      <button id="copy" disabled>Copy link</button>
-      <button id="go" disabled>Open installer</button>
-    </p>
+  <div id="err" class="error" style="display:none"></div>
+  <div id="grid" class="grid"></div>
 
-    <p class="muted" style="margin-top: 12px;">
-      If you meant a different “R1” definition (Teams classic vs new Teams, different platform ID, etc.), change the fields in <code>ENDPOINTS</code>.
-    </p>
+  <div class="footer">
+    Source: defconfig2 from ItzLevvie/MicrosoftTeams-msinternal (fetched live at page load).
   </div>
 
 <script>
 (() => {
-  // Architecture selection (default x64; adjust if you want)
-  const arch = (navigator.userAgent.includes("ARM") || navigator.userAgent.includes("arm")) ? "arm64" : "x64";
+  // Raw text file that already includes “published on …” and sizes (what you pasted).
+  const DEFCONFIG2_RAW =
+    "https://raw.githubusercontent.com/ItzLevvie/MicrosoftTeams-msinternal/master/defconfig2";
 
-  // “Teams based on WebView2 (Windows)” is platform ID 49 in the repo README examples. :contentReference[oaicite:2]{index=2}
-  // This config endpoint returns JSON including installer links like:
-  // BuildSettings.WebView2.x64.buildLink = https://installer.teams.static.microsoft/.../MicrosoftTeams-x64.msix :contentReference[oaicite:3]{index=3}
-  const ENDPOINTS = [
-    { ring: "ring1",   url: `https://config.teams.microsoft.com/config/v1/MicrosoftTeams/49_1.0.0.0?environment=prod&audienceGroup=general&teamsRing=ring1&agent=TeamsBuilds` },
-    { ring: "ring1_5", url: `https://config.teams.microsoft.com/config/v1/MicrosoftTeams/49_1.0.0.0?environment=prod&audienceGroup=general&teamsRing=ring1_5&agent=TeamsBuilds` },
-    // Fallback (stable/general) example known to work:
-    { ring: "general", url: `https://config.teams.microsoft.com/config/v1/MicrosoftTeams/49_1.0.0.0?environment=prod&audienceGroup=general&teamsRing=general&agent=TeamsBuilds` },
+  // Friendly labels for the headings in defconfig2
+  const HEADING_TO_LABEL = [
+    { key: "URLs for the latest Canary (R0) build of Microsoft Teams", label: "Canary (R0)" },
+    { key: "URLs for the latest Canary Slimcore (R0s) build of Microsoft Teams", label: "Canary Slimcore (R0s)" },
+
+    { key: "URLs for the latest Teams (R1) build of Microsoft Teams", label: "Regular (FOR USERS)" },
+
+    { key: "URLs for the latest IT Admins Preview (R1.5 or BETA) build of Microsoft Teams", label: "IT Admins Preview (R1.5 / BETA)" },
+    { key: "URLs for the latest Developers Partners Preview (R1.6 or DP) build of Microsoft Teams", label: "Developers/Partners Preview (R1.6 / DP)" },
+    { key: "URLs for the latest Microsoft Dogfood (R2 or DF) build of Microsoft Teams", label: "Dogfood (R2 / DF)" },
+
+    { key: "URLs for the latest TAP/Beta Users (R3 or TAP) build of Microsoft Teams", label: "TAP/Beta Users (R3 / TAP)" },
+    { key: "URLs for the latest Early Access (R3.6 or EA) build of Microsoft Teams", label: "Early Access (R3.6 / EA)" },
+    { key: "URLs for the latest Microsoft Outer Ring (R3.9 or MS) build of Microsoft Teams", label: "Outer Ring (R3.9 / MS)" },
+
+    { key: "URLs for the latest Public (R4) build of Microsoft Teams", label: "Public (R4)" },
+    { key: "URLs for the latest Public GCC (R4) build of Microsoft Teams", label: "Public GCC (R4)" },
+    { key: "URLs for the latest Public GCC High (R4) build of Microsoft Teams", label: "Public GCC High (R4)" },
+    { key: "URLs for the latest Public DoD (R4) build of Microsoft Teams", label: "Public DoD (R4)" },
+    { key: "URLs for the latest Public Gallatin (R4) build of Microsoft Teams", label: "Public Gallatin (R4)" },
   ];
 
+  // Extract the win-x64 line for “Teams 2.1 — Microsoft Teams:” in each block
+  // Example line format in your paste:
+  // 26037.500.4358.2440 (win-x64) - published on Friday, February 6, 2026 at 8:18 AM with 249 MB: https://...
+  const WINX64_RE = /(\d{5}\.\d+\.\d+\.\d+)\s+\(win-x64\)\s+-\s+published on\s+(.+?)\s+with\s+(.+?):\s+(https?:\/\/\S+)/i;
+
   const el = (id) => document.getElementById(id);
-  el("arch").textContent = arch;
+  const grid = el("grid");
+  const status = el("status");
+  const errBox = el("err");
+  const filter = el("filter");
 
-  const setStatus = (s) => { el("status").textContent = s; };
-
-  function pickInstaller(json) {
-    // New Teams (WebView2) installers:
-    // BuildSettings.WebView2.{x64,x86,arm64}.buildLink + latestVersion :contentReference[oaicite:4]{index=4}
-    const wv2 = json?.BuildSettings?.WebView2;
-    const entry = wv2?.[arch];
-    if (entry?.buildLink && entry?.latestVersion) {
-      return { version: entry.latestVersion, url: entry.buildLink, channel: "WebView2" };
-    }
-
-    // If you *actually* want Canary (R0), you could use WebView2Canary instead.
-    const canary = json?.BuildSettings?.WebView2Canary?.[arch];
-    if (canary?.buildLink && canary?.latestVersion) {
-      return { version: canary.latestVersion, url: canary.buildLink, channel: "WebView2Canary" };
-    }
-
-    return null;
+  function setError(msg) {
+    errBox.style.display = "block";
+    errBox.textContent = msg;
   }
 
-  async function tryFetch() {
-    for (const ep of ENDPOINTS) {
-      try {
-        setStatus(`Querying ${ep.ring}…`);
-        const res = await fetch(ep.url, { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
-        const picked = pickInstaller(json);
-        if (!picked) throw new Error("Could not find installer fields in JSON");
+  function clearError() {
+    errBox.style.display = "none";
+    errBox.textContent = "";
+  }
 
-        el("ring").textContent = ep.ring;
-        el("version").textContent = picked.version;
-        el("url").innerHTML = `<a href="${picked.url}">${picked.url}</a>`;
-        setStatus(`OK (source: ${picked.channel})`);
+  function cardHtml(item) {
+    const safe = (s) => (s || "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+    const tag = item.label === "Regular (FOR USERS)" ? "Default" : "Ring";
+    return `
+      <div class="card" data-kind="${item.kind}">
+        <div class="title">
+          <b>${safe(item.label)}</b>
+          <span class="pill">${safe(tag)}</span>
+        </div>
 
-        const copyBtn = el("copy");
-        const goBtn = el("go");
-        copyBtn.disabled = false;
-        goBtn.disabled = false;
+        <div class="row"><span class="muted">Version:</span> <code>${safe(item.version)}</code></div>
+        <div class="row"><span class="muted">Released:</span> ${safe(item.released)}</div>
+        <div class="row"><span class="muted">Size:</span> ${safe(item.size)}</div>
+        <div class="row"><span class="muted">win-x64:</span> <a href="${safe(item.url)}">${safe(item.url)}</a></div>
 
-        copyBtn.onclick = async () => {
-          await navigator.clipboard.writeText(picked.url);
-          copyBtn.textContent = "Copied!";
-          setTimeout(() => (copyBtn.textContent = "Copy link"), 1200);
-        };
-        goBtn.onclick = () => window.location.href = picked.url;
-        return;
-      } catch (e) {
-        // Try next endpoint
-        console.warn("Failed endpoint", ep, e);
+        <div class="actions">
+          <button class="copy" data-url="${safe(item.url)}">Copy link</button>
+          <button class="open" data-url="${safe(item.url)}">Open</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function applyFilter() {
+    const mode = filter.value; // "regular" or "all"
+    for (const card of grid.querySelectorAll(".card")) {
+      const kind = card.getAttribute("data-kind");
+      const show = (mode === "all") || (mode === "regular" && kind === "regular");
+      card.style.display = show ? "" : "none";
+    }
+  }
+
+  function wireButtons() {
+    grid.querySelectorAll("button.copy").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const url = btn.getAttribute("data-url");
+        try {
+          await navigator.clipboard.writeText(url);
+          const old = btn.textContent;
+          btn.textContent = "Copied!";
+          setTimeout(() => (btn.textContent = old), 900);
+        } catch {
+          alert("Copy failed. You can right-click the link and copy it.");
+        }
+      });
+    });
+
+    grid.querySelectorAll("button.open").forEach(btn => {
+      btn.addEventListener("click", () => {
+        window.location.href = btn.getAttribute("data-url");
+      });
+    });
+  }
+
+  function parseBlocks(text) {
+    // Split into blocks by headings in HEADING_TO_LABEL.
+    const blocks = [];
+    for (const h of HEADING_TO_LABEL) {
+      const idx = text.indexOf(h.key + ":");
+      if (idx === -1) continue;
+
+      // Block ends at the next long separator line or next heading
+      const rest = text.slice(idx);
+      const nextSep = rest.indexOf("————————————————");
+      const blockText = nextSep !== -1 ? rest.slice(0, nextSep) : rest;
+
+      blocks.push({ heading: h.key, label: h.label, raw: blockText });
+    }
+
+    const items = [];
+    for (const b of blocks) {
+      // We only show “Teams 2.1 — Microsoft Teams” win-x64 line
+      // (If you later want personal/rooms too, we can add toggles.)
+      const teams21Idx = b.raw.indexOf("Teams 2.1 — Microsoft Teams:");
+      const slice = teams21Idx !== -1 ? b.raw.slice(teams21Idx) : b.raw;
+
+      const m = slice.match(WINX64_RE);
+      if (!m) continue;
+
+      const version = m[1];
+      const released = m[2];
+      const size = m[3];
+      const url = m[4];
+
+      items.push({
+        label: b.label,
+        kind: b.label.startsWith("Regular") ? "regular" : "other",
+        version, released, size, url
+      });
+    }
+
+    // Put Regular first, then the rest in a sensible order (as defined in HEADING_TO_LABEL)
+    items.sort((a, b) => (a.kind === "regular" ? -1 : 1) - (b.kind === "regular" ? -1 : 1));
+    return items;
+  }
+
+  async function load() {
+    clearError();
+    status.textContent = "Loading…";
+
+    try {
+      const res = await fetch(DEFCONFIG2_RAW, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+
+      const items = parseBlocks(text);
+      if (!items.length) {
+        throw new Error("Parsed zero rings. defconfig2 format may have changed.");
       }
-    }
 
-    setStatus("Failed to fetch any ring (ring name might differ, or CORS/network blocked).");
-    el("ring").textContent = "—";
+      grid.innerHTML = items.map(cardHtml).join("");
+      wireButtons();
+      applyFilter();
+
+      const now = new Date();
+      status.textContent = `Updated: ${now.toLocaleString()}`;
+    } catch (e) {
+      setError(
+        "Could not load installers. This page fetches defconfig2 from raw.githubusercontent.com.\n\n" +
+        "If you’re on a locked-down network, GitHub raw access might be blocked."
+      );
+      status.textContent = "Failed";
+      grid.innerHTML = "";
+      console.error(e);
+    }
   }
 
-  tryFetch();
+  el("refresh").addEventListener("click", load);
+  filter.addEventListener("change", applyFilter);
+
+  load();
 })();
 </script>
 </body>
