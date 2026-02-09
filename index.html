@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Latest Teams R1 Installer</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; line-height: 1.4; }
+    code { background: #f4f4f4; padding: 2px 6px; border-radius: 6px; }
+    .box { padding: 16px; border: 1px solid #ddd; border-radius: 12px; max-width: 900px; }
+    .muted { color: #666; }
+    a { word-break: break-all; }
+    button { padding: 8px 12px; border-radius: 10px; border: 1px solid #ccc; background: white; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Latest Teams “R1” installer link</h1>
+  <div class="box">
+    <p class="muted">
+      This page queries the Teams config service and prints the newest install link for the selected ring.
+    </p>
+
+    <p><b>Status:</b> <span id="status">Loading…</span></p>
+    <p><b>Ring:</b> <code id="ring">—</code></p>
+    <p><b>Arch:</b> <code id="arch">—</code></p>
+    <p><b>Version:</b> <code id="version">—</code></p>
+    <p><b>Installer URL:</b> <span id="url">—</span></p>
+
+    <p>
+      <button id="copy" disabled>Copy link</button>
+      <button id="go" disabled>Open installer</button>
+    </p>
+
+    <p class="muted" style="margin-top: 12px;">
+      If you meant a different “R1” definition (Teams classic vs new Teams, different platform ID, etc.), change the fields in <code>ENDPOINTS</code>.
+    </p>
+  </div>
+
+<script>
+(() => {
+  // Architecture selection (default x64; adjust if you want)
+  const arch = (navigator.userAgent.includes("ARM") || navigator.userAgent.includes("arm")) ? "arm64" : "x64";
+
+  // “Teams based on WebView2 (Windows)” is platform ID 49 in the repo README examples. :contentReference[oaicite:2]{index=2}
+  // This config endpoint returns JSON including installer links like:
+  // BuildSettings.WebView2.x64.buildLink = https://installer.teams.static.microsoft/.../MicrosoftTeams-x64.msix :contentReference[oaicite:3]{index=3}
+  const ENDPOINTS = [
+    { ring: "ring1",   url: `https://config.teams.microsoft.com/config/v1/MicrosoftTeams/49_1.0.0.0?environment=prod&audienceGroup=general&teamsRing=ring1&agent=TeamsBuilds` },
+    { ring: "ring1_5", url: `https://config.teams.microsoft.com/config/v1/MicrosoftTeams/49_1.0.0.0?environment=prod&audienceGroup=general&teamsRing=ring1_5&agent=TeamsBuilds` },
+    // Fallback (stable/general) example known to work:
+    { ring: "general", url: `https://config.teams.microsoft.com/config/v1/MicrosoftTeams/49_1.0.0.0?environment=prod&audienceGroup=general&teamsRing=general&agent=TeamsBuilds` },
+  ];
+
+  const el = (id) => document.getElementById(id);
+  el("arch").textContent = arch;
+
+  const setStatus = (s) => { el("status").textContent = s; };
+
+  function pickInstaller(json) {
+    // New Teams (WebView2) installers:
+    // BuildSettings.WebView2.{x64,x86,arm64}.buildLink + latestVersion :contentReference[oaicite:4]{index=4}
+    const wv2 = json?.BuildSettings?.WebView2;
+    const entry = wv2?.[arch];
+    if (entry?.buildLink && entry?.latestVersion) {
+      return { version: entry.latestVersion, url: entry.buildLink, channel: "WebView2" };
+    }
+
+    // If you *actually* want Canary (R0), you could use WebView2Canary instead.
+    const canary = json?.BuildSettings?.WebView2Canary?.[arch];
+    if (canary?.buildLink && canary?.latestVersion) {
+      return { version: canary.latestVersion, url: canary.buildLink, channel: "WebView2Canary" };
+    }
+
+    return null;
+  }
+
+  async function tryFetch() {
+    for (const ep of ENDPOINTS) {
+      try {
+        setStatus(`Querying ${ep.ring}…`);
+        const res = await fetch(ep.url, { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        const picked = pickInstaller(json);
+        if (!picked) throw new Error("Could not find installer fields in JSON");
+
+        el("ring").textContent = ep.ring;
+        el("version").textContent = picked.version;
+        el("url").innerHTML = `<a href="${picked.url}">${picked.url}</a>`;
+        setStatus(`OK (source: ${picked.channel})`);
+
+        const copyBtn = el("copy");
+        const goBtn = el("go");
+        copyBtn.disabled = false;
+        goBtn.disabled = false;
+
+        copyBtn.onclick = async () => {
+          await navigator.clipboard.writeText(picked.url);
+          copyBtn.textContent = "Copied!";
+          setTimeout(() => (copyBtn.textContent = "Copy link"), 1200);
+        };
+        goBtn.onclick = () => window.location.href = picked.url;
+        return;
+      } catch (e) {
+        // Try next endpoint
+        console.warn("Failed endpoint", ep, e);
+      }
+    }
+
+    setStatus("Failed to fetch any ring (ring name might differ, or CORS/network blocked).");
+    el("ring").textContent = "—";
+  }
+
+  tryFetch();
+})();
+</script>
+</body>
+</html>
